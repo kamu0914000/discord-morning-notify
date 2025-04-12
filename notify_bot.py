@@ -76,9 +76,10 @@ async def main():
         )
         embed.set_footer(text="powered by ChatGPT + OpenWeather + Yahoo News")
 
-            await channel.send(content="@everyone", embed=embed)
-            await client.close()
+        await channel.send(content="@everyone", embed=embed)
+        await client.close()
 
     await client.start(discord_token)
+
 
 asyncio.run(main())
