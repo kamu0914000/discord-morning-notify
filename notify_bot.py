@@ -63,6 +63,13 @@ def generate_forecast_summary(forecast_text):
     )
     return response.choices[0].message.content
 
+# 傘のアドバイス生成
+def get_umbrella_advice(forecast_text):
+    if "雨" in forecast_text:
+        return "午後から雨が降るかもしれません。お出かけの際は傘をお忘れなく☂️"
+    else:
+        return "今日は雨の心配はなさそうです。気持ちのいい一日になりますように☀️"
+
 # ニュース取得（YahooニュースRSS）
 def get_news():
     import feedparser
@@ -76,9 +83,10 @@ async def generate_message():
     weather = get_weather()
     forecast = get_forecast()
     forecast_summary = generate_forecast_summary(forecast)
+    advice = get_umbrella_advice(forecast)
     news = get_news()
 
-    return f"おはようございます！\n{weather}\n\n🌤 今日の天気まとめ\n{forecast_summary}\n\n📰 今日のニュース\n{news}"
+    return f"おはようございます！\n{weather}\n\n🌤 今日の天気まとめ\n{forecast_summary}\n\n☂️ 傘のアドバイス\n{advice}\n\n📰 今日のニュース\n{news}"
 
 # Discord通知
 async def main():
@@ -104,4 +112,5 @@ async def main():
     await client_bot.start(discord_token)
 
 asyncio.run(main())
+
 
