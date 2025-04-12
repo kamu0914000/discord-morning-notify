@@ -1,73 +1,95 @@
 import os
-import openai
-import discord
-import asyncio
 import requests
-import feedparser
+import openai
+import asyncio
+import discord
+from datetime import datetime
 from dotenv import load_dotenv
+from openai import OpenAI
 
-# .envの読み込み
+# 環境変数の読み込み
 load_dotenv()
-
+weather_api_key = os.getenv("OPENWEATHER_API_KEY")
+openai_api_key = os.getenv("OPENAI_API_KEY")
 discord_token = os.getenv("DISCORD_TOKEN")
 channel_id = int(os.getenv("DISCORD_CHANNEL_ID"))
-weather_api_key = os.getenv("OPENWEATHER_API_KEY")
 
-# 東京都心の天気を取得
+client = OpenAI(api_key=openai_api_key)
+
+# 現在の天気情報取得
 def get_weather():
     url = f"http://api.openweathermap.org/data/2.5/weather?q=Tokyo,jp&appid={weather_api_key}&units=metric&lang=ja"
     response = requests.get(url)
     data = response.json()
+
     if response.status_code != 200:
         return "天気情報の取得に失敗しました。"
 
-    desc = data["weather"][0]["description"]
+    weather = data["weather"][0]["description"]
     temp = data["main"]["temp"]
-    temp_min = data["main"]["temp_min"]
-    temp_max = data["main"]["temp_max"]
-    return f"{desc}、現在の気温は{temp}℃（最高{temp_max}℃ / 最低{temp_min}℃）です。"
+    return f"現在の天気は「{weather}」、気温は{temp:.1f}℃です。"
 
-# ニュース（YahooトピックRSS）を取得
-def get_news():
-    feed = feedparser.parse("https://news.yahoo.co.jp/rss/topics/top-picks.xml")
-    top_articles = [f"・{entry.title}" for entry in feed.entries[:3]]
-    return "\n".join(top_articles)
+# 今日の3時間ごとの天気予報取得
+def get_forecast():
+    url = f"http://api.openweathermap.org/data/2.5/forecast?q=Tokyo,jp&appid={weather_api_key}&units=metric&lang=ja"
+    response = requests.get(url)
+    data = response.json()
 
-# GPTで通知文を生成
-from openai import OpenAI
+    if response.status_code != 200:
+        return ""
 
-client = OpenAI(api_key=os.getenv("OPENAI_API_KEY"))
+    today = datetime.utcnow().date()
+    forecast_data = [
+        entry for entry in data["list"]
+        if datetime.fromtimestamp(entry["dt"]).date() == today
+           and entry["dt_txt"].split(" ")[1][:2] in ["09", "12", "15", "18", "21"]
+    ]
 
-async def generate_message(weather_text, news_text):
-    prompt = (
-        "以下の情報を元に、朝のDiscord通知メッセージを自然な口調で作ってください。\n"
-        "1. 天気情報\n"
-        f"{weather_text}\n"
-        "2. 今日の注目ニュース\n"
-        f"{news_text}\n"
-        "テンションは明るめで、見た人が『よし今日も頑張ろう』と思えるようにしてください。"
-    )
+    return "\n".join([f'{entry["dt_txt"][11:16]} {entry["weather"][0]["description"]} {entry["main"]["temp"]:.1f}℃' for entry in forecast_data])
 
+# GPTで天気予報を要約
+def generate_forecast_summary(forecast_text):
+    prompt = f"""
+以下は東京都心の今日の天気予報です（3時間ごとの天気と気温）：
+{forecast_text}
+
+この情報をもとに、親しみやすく自然な口調で、朝から夜までの天気や気温の様子を一文でまとめてください。元気が出る一言も添えてください。
+"""
     response = client.chat.completions.create(
-        model="gpt-4o",
-        messages=[{"role": "user", "content": prompt}]
+        model="gpt-3.5-turbo",
+        messages=[
+            {"role": "user", "content": prompt}
+        ]
     )
-
     return response.choices[0].message.content
 
+# ニュース取得（YahooニュースRSS）
+def get_news():
+    import feedparser
+    rss_url = "https://news.yahoo.co.jp/rss/topics/top-picks.xml"
+    feed = feedparser.parse(rss_url)
+    news_list = [entry.title for entry in feed.entries[:3]]
+    return "\n".join([f"・{item}" for item in news_list])
 
-# Discordに送信
-async def main():
+# メッセージ生成
+async def generate_message():
     weather = get_weather()
+    forecast = get_forecast()
+    forecast_summary = generate_forecast_summary(forecast)
     news = get_news()
-    message = await generate_message(weather, news)
+
+    return f"おはようございます！\n{weather}\n\n🌤 今日の天気まとめ\n{forecast_summary}\n\n📰 今日のニュース\n{news}"
+
+# Discord通知
+async def main():
+    message = await generate_message()
 
     intents = discord.Intents.default()
-    client = discord.Client(intents=intents)
+    client_bot = discord.Client(intents=intents)
 
-    @client.event
+    @client_bot.event
     async def on_ready():
-        channel = client.get_channel(channel_id)
+        channel = client_bot.get_channel(channel_id)
 
         embed = discord.Embed(
             title="☀️ 今日の朝通知",
@@ -77,10 +99,9 @@ async def main():
         embed.set_footer(text="powered by ChatGPT + OpenWeather + Yahoo News")
 
         await channel.send(content="☀️ 今日の朝通知", embed=embed)
-        await client.close()
+        await client_bot.close()
 
-    await client.start(discord_token)
+    await client_bot.start(discord_token)
 
-# ⬇ これが唯一「関数の外」にある行でOK！
-import asyncio
 asyncio.run(main())
+
