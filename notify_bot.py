@@ -65,22 +65,22 @@ async def main():
     intents = discord.Intents.default()
     client = discord.Client(intents=intents)
 
-@client.event
-async def on_ready():
-    channel = client.get_channel(channel_id)
+    @client.event
+    async def on_ready():
+        channel = client.get_channel(channel_id)
 
-    embed = discord.Embed(
-        title="☀️ 今日の朝通知",
-        description=message,
-        color=0x1abc9c
-    )
-    embed.set_footer(text="powered by ChatGPT + OpenWeather + Yahoo News")
+        embed = discord.Embed(
+            title="☀️ 今日の朝通知",
+            description=message,
+            color=0x1abc9c
+        )
+        embed.set_footer(text="powered by ChatGPT + OpenWeather + Yahoo News")
 
-    await channel.send(content="☀️ 今日の朝通知", embed=embed)
-    await client.close()
+        await channel.send(content="☀️ 今日の朝通知", embed=embed)
+        await client.close()
 
-# 👇 ここは on_ready の外に置く！
-await client.start(discord_token)
+    await client.start(discord_token)
 
-
+# ⬇ これが唯一「関数の外」にある行でOK！
+import asyncio
 asyncio.run(main())
