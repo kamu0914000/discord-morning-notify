@@ -1,103 +1,100 @@
 import os
-import requests
 import openai
-import asyncio
 import discord
+import asyncio
+import requests
+import feedparser
 from datetime import datetime
 from dotenv import load_dotenv
-from openai import OpenAI
 
-# 環境変数の読み込み
 load_dotenv()
-weather_api_key = os.getenv("OPENWEATHER_API_KEY")
+
 openai_api_key = os.getenv("OPENAI_API_KEY")
 discord_token = os.getenv("DISCORD_TOKEN")
 channel_id = int(os.getenv("DISCORD_CHANNEL_ID"))
+weather_api_key = os.getenv("OPENWEATHER_API_KEY")
 
-client = OpenAI(api_key=openai_api_key)
-
-# 現在の天気情報取得
-def get_weather():
-    url = f"http://api.openweathermap.org/data/2.5/weather?q=Tokyo,jp&appid={weather_api_key}&units=metric&lang=ja"
+# 現在の天気情報を取得
+def get_current_weather():
+    url = f"https://api.openweathermap.org/data/2.5/weather?q=Tokyo,jp&appid={weather_api_key}&units=metric&lang=ja"
     response = requests.get(url)
     data = response.json()
-
     if response.status_code != 200:
-        return "天気情報の取得に失敗しました。"
-
+        return None
     weather = data["weather"][0]["description"]
     temp = data["main"]["temp"]
-    return f"現在の天気は「{weather}」、気温は{temp:.1f}℃です。"
+    return weather, temp
 
-# 今日の3時間ごとの天気予報取得
-def get_forecast():
-    url = f"http://api.openweathermap.org/data/2.5/forecast?q=Tokyo,jp&appid={weather_api_key}&units=metric&lang=ja"
+# 今日の天気予報を取得
+def get_today_forecast():
+    url = f"https://api.openweathermap.org/data/2.5/forecast?q=Tokyo,jp&appid={weather_api_key}&units=metric&lang=ja"
     response = requests.get(url)
     data = response.json()
-
     if response.status_code != 200:
-        return ""
+        return None
 
-    today = datetime.utcnow().date()
-    forecast_data = [
-        entry for entry in data["list"]
-        if datetime.fromtimestamp(entry["dt"]).date() == today
-           and entry["dt_txt"].split(" ")[1][:2] in ["06", "09", "12", "15", "18", "21"]
-    ]
+    forecasts = [entry for entry in data["list"] if "09:00:00" in entry["dt_txt"] or "12:00:00" in entry["dt_txt"] or "18:00:00" in entry["dt_txt"]]
 
-    return "\n".join([f'{entry["dt_txt"][11:16]} {entry["weather"][0]["description"]} {entry["main"]["temp"]:.1f}℃' for entry in forecast_data])
+    weather_summary = []
+    rain_expected = False
+    for entry in forecasts:
+        time = entry["dt_txt"].split(" ")[1][:5]
+        desc = entry["weather"][0]["description"]
+        temp = round(entry["main"]["temp"])
+        weather_summary.append(f"{time}時：{desc}（{temp}℃）")
+        if "rain" in entry["weather"][0]["main"].lower():
+            rain_expected = True
 
-# GPTで天気予報を要約
-def generate_forecast_summary(forecast_text):
+    return weather_summary, rain_expected
+
+# ニュース取得
+def get_news():
+    url = "https://news.yahoo.co.jp/rss/topics/top-picks.xml"
+    feed = feedparser.parse(url)
+    entries = feed.entries[:3]
+    return [entry.title for entry in entries]
+
+# GPTでメッセージ生成
+async def generate_message(current_weather, temp, forecast, rain_expected, news):
     prompt = f"""
-以下は東京都心の今日の天気予報です（3時間ごとの天気と気温）：
-{forecast_text}
+おはようございます！
+現在の天気は「{current_weather}」、気温は{temp}℃です。
 
-この情報をもとに、親しみやすく自然な口調で、朝から夜までの天気や気温の様子を一文でまとめてください。元気が出る一言も添えてください。
+🌤 今日の天気まとめ
+{', '.join(forecast)}
+
+☂️ 傘のアドバイス
+{"今日は雨の可能性があるので、傘を持って出かけてね！" if rain_expected else "今日は雨の心配はなさそうです。気持ちのいい一日になりますように☀️"}
+
+📰 今日のニュース
+・{news[0]}
+・{news[1]}
+・{news[2]}
 """
+
+    client = openai.OpenAI(api_key=openai_api_key)
     response = client.chat.completions.create(
-        model="gpt-3.5-turbo",
+        model="gpt-4",
         messages=[
+            {"role": "system", "content": "あなたは親しみやすくて丁寧な朝の案内役です。"},
             {"role": "user", "content": prompt}
         ]
     )
     return response.choices[0].message.content
 
-# 傘のアドバイス生成
-def get_umbrella_advice(forecast_text):
-    if "雨" in forecast_text:
-        return "午後から雨が降るかもしれません。お出かけの際は傘をお忘れなく☂️"
-    else:
-        return "今日は雨の心配はなさそうです。気持ちのいい一日になりますように☀️"
-
-# ニュース取得（YahooニュースRSS）
-def get_news():
-    import feedparser
-    rss_url = "https://news.yahoo.co.jp/rss/topics/top-picks.xml"
-    feed = feedparser.parse(rss_url)
-    news_list = [entry.title for entry in feed.entries[:3]]
-    return "\n".join([f"・{item}" for item in news_list])
-
-# メッセージ生成
-async def generate_message():
-    weather = get_weather()
-    forecast = get_forecast()
-    forecast_summary = generate_forecast_summary(forecast)
-    advice = get_umbrella_advice(forecast)
-    news = get_news()
-
-    return f"おはようございます！\n{weather}\n\n🌤 今日の天気まとめ\n{forecast_summary}\n\n☂️ 傘のアドバイス\n{advice}\n\n📰 今日のニュース\n{news}"
-
-# Discord通知
+# Discordに送信
 async def main():
-    message = await generate_message()
+    weather, temp = get_current_weather()
+    forecast, rain_expected = get_today_forecast()
+    news = get_news()
+    message = await generate_message(weather, temp, forecast, rain_expected, news)
 
     intents = discord.Intents.default()
-    client_bot = discord.Client(intents=intents)
+    client = discord.Client(intents=intents)
 
-    @client_bot.event
+    @client.event
     async def on_ready():
-        channel = client_bot.get_channel(channel_id)
+        channel = client.get_channel(channel_id)
 
         embed = discord.Embed(
             title="☀️ 今日の朝通知",
@@ -107,11 +104,13 @@ async def main():
         embed.set_footer(text="powered by ChatGPT + OpenWeather + Yahoo News")
 
         await channel.send(content="☀️ 今日の朝通知", embed=embed)
-        await client_bot.close()
+        await client.close()
 
-    await client_bot.start(discord_token)
+    await client.start(discord_token)
 
 asyncio.run(main())
+
+
 
 
 
