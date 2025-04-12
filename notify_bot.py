@@ -67,13 +67,14 @@ async def main():
 
     @client.event
     async def on_ready():
-        channel = client.get_channel(channel_id)
-        embed = discord.Embed(
-    title="☀️ 今日の朝通知",
-    description=message,
-    color=0x1abc9c  # 好きな色に変えてOK（ここは水色）
-)
-embed.set_footer(text="powered by ChatGPT + OpenWeather + Yahoo News")
+    channel = client.get_channel(channel_id)
+
+    embed = discord.Embed(
+        title="☀️ 今日の朝通知",
+        description=message,
+        color=0x1abc9c
+    )
+    embed.set_footer(text="powered by ChatGPT + OpenWeather + Yahoo News")
 
         await channel.send(content="@everyone", embed=embed)
         await client.close()
