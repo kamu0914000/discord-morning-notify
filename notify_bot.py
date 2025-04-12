@@ -68,7 +68,7 @@ async def main():
     @client.event
     async def on_ready():
         channel = client.get_channel(channel_id)
-        await channel.send(message)
+        await channel.send(f"@everyone\n{message}")
         await client.close()
 
     await client.start(discord_token)
