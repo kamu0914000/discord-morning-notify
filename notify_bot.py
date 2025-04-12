@@ -69,18 +69,16 @@ async def main():
     async def on_ready():
         channel = client.get_channel(channel_id)
 
-        embed = discord.Embed(
-            title="☀️ 今日の朝通知",
-            description=message,
-            color=0x1abc9c
-        )
-        embed.set_footer(text="powered by ChatGPT + OpenWeather + Yahoo News")
+        # 本文をすべて content に直接入れる
+        full_message = f"""@everyone
+☀️ おはようございます！
 
-        await channel.send(
-    content=f"☀️ 今日の通知だよ！@everyone\n{message}",
-    embed=embed
-)
+{message}
 
+powered by ChatGPT + OpenWeather + Yahoo News
+"""
+
+        await channel.send(content=full_message)
         await client.close()
 
     await client.start(discord_token)
