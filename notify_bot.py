@@ -19,7 +19,20 @@ def get_current_weather():
     data = requests.get(url).json()
     description = data['weather'][0]['description']
     temp = round(data['main']['temp'], 1)
-    return f"現在の天気は「{description}」、気温は{temp}℃です。"
+    return description, temp
+
+# 服装アドバイスを生成
+def get_clothing_advice(temp):
+    if temp < 10:
+        return "かなり寒いので、コートや厚手の上着をおすすめします🧣"
+    elif temp < 16:
+        return "肌寒い一日になりそうです。ライトアウターやトレンチコートがあると安心です🧥"
+    elif temp < 22:
+        return "過ごしやすい気温です。長袖シャツや薄手のジャケットがおすすめです👔"
+    elif temp < 27:
+        return "暖かく快適な陽気です。シャツ一枚でも大丈夫そうです👕"
+    else:
+        return "暑い一日になりそうです。半袖＆帽子で熱中症対策を☀️🧢"
 
 # 降水確率を取得（3時間ごとの予報）
 def get_rain_forecast():
@@ -50,11 +63,12 @@ def get_news():
     return [f"・{entry.title}" for entry in entries]
 
 # ChatGPTに要約させる
-def generate_message(current_weather, forecast, umbrella_advice, news):
+def generate_message(description, temp, clothing_advice, forecast, umbrella_advice, news):
     prompt = f"""
 おはようございます！
 
-{current_weather}
+☀️ 現在の天気は「{description}」、気温は{temp}℃です。
+👕 {clothing_advice}
 
 🌤️ 今日の天気まとめ
 {umbrella_advice}
@@ -71,12 +85,13 @@ def generate_message(current_weather, forecast, umbrella_advice, news):
 
 # Discord通知
 async def main():
-    current_weather = get_current_weather()
+    description, temp = get_current_weather()
+    clothing_advice = get_clothing_advice(temp)
     rain_forecast = get_rain_forecast()
     umbrella_advice = get_umbrella_advice(rain_forecast)
     news = get_news()
 
-    message = generate_message(current_weather, rain_forecast, umbrella_advice, news)
+    message = generate_message(description, temp, clothing_advice, rain_forecast, umbrella_advice, news)
 
     intents = discord.Intents.default()
     client = discord.Client(intents=intents)
@@ -98,6 +113,7 @@ async def main():
 
 if __name__ == "__main__":
     asyncio.run(main())
+
 
 
 
