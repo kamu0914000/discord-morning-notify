@@ -42,7 +42,7 @@ def get_forecast():
     forecast_data = [
         entry for entry in data["list"]
         if datetime.fromtimestamp(entry["dt"]).date() == today
-           and entry["dt_txt"].split(" ")[1][:2] in ["09", "12", "15", "18", "21"]
+           and entry["dt_txt"].split(" ")[1][:2] in ["06", "09", "12", "15", "18", "21"]
     ]
 
     return "\n".join([f'{entry["dt_txt"][11:16]} {entry["weather"][0]["description"]} {entry["main"]["temp"]:.1f}℃' for entry in forecast_data])
@@ -112,5 +112,6 @@ async def main():
     await client_bot.start(discord_token)
 
 asyncio.run(main())
+
 
 
