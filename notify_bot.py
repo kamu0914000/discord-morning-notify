@@ -34,26 +34,27 @@ def get_clothing_advice(temp):
     else:
         return "暑い一日になりそうです。半袖＆帽子で熱中症対策を☀️🧢"
 
-# 降水確率を取得（3時間ごとの予報）
+# 降水確率を取得（9時〜12時のみ）
 def get_rain_forecast():
     url = f"https://api.openweathermap.org/data/2.5/forecast?q=Tokyo,jp&appid={weather_api_key}&units=metric&lang=ja"
     data = requests.get(url).json()
     forecast_text = []
-    for item in data['list'][:8]:  # 24時間分（3時間×8）
-        dt = datetime.fromtimestamp(item['dt']) + timedelta(hours=9)
-        time_range = f"{dt.hour}時〜{(dt.hour + 3)%24}時"
-        weather_desc = item['weather'][0]['description']
-        rain = item.get('pop', 0)
-        if rain >= 0.3:
-            forecast_text.append(f"・{time_range}：{weather_desc}（降水確率{int(rain * 100)}%）")
+    for item in data['list']:
+        dt = datetime.fromtimestamp(item['dt']) + timedelta(hours=9)  # JST変換
+        if dt.hour in [9, 12]:
+            time_range = f"{dt.hour}時〜{(dt.hour + 3)%24}時"
+            weather_desc = item['weather'][0]['description']
+            rain = item.get('pop', 0)
+            if rain >= 0.3:
+                forecast_text.append(f"・{time_range}：{weather_desc}（降水確率{int(rain * 100)}%）")
     return forecast_text
 
 # 傘の要不要をざっくり判断
 def get_umbrella_advice(rain_forecast):
     if rain_forecast:
-        return "今日は雨の時間帯があります。傘を持って出かけると安心です ☂️"
+        return "今日は午前中に雨の可能性があります。傘を持って出かけると安心です ☂️"
     else:
-        return "今日は雨の心配はなさそうです。傘は必要なさそうですね！"
+        return "午前中は雨の心配はなさそうです。傘は必要なさそうですね！"
 
 # ニュース取得
 def get_news():
@@ -73,7 +74,7 @@ def generate_message(description, temp, clothing_advice, forecast, umbrella_advi
 🌤️ 今日の天気まとめ
 {umbrella_advice}
 
-⏰ 時間帯ごとの雨予報
+⏰ 午前中の雨予報（9時〜12時）
 {chr(10).join(forecast) if forecast else '雨の予報はありません。'}
 
 📰 今日の注目ニュース
@@ -113,6 +114,7 @@ async def main():
 
 if __name__ == "__main__":
     asyncio.run(main())
+
 
 
 
