@@ -65,7 +65,7 @@ async def main():
     intents = discord.Intents.default()
     client = discord.Client(intents=intents)
 
-    @client.event
+@client.event
 async def on_ready():
     channel = client.get_channel(channel_id)
 
