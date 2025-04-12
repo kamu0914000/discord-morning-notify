@@ -76,7 +76,11 @@ async def main():
         )
         embed.set_footer(text="powered by ChatGPT + OpenWeather + Yahoo News")
 
-        await channel.send(content="@everyone", embed=embed)
+        await channel.send(
+    content=f"☀️ 今日の通知だよ！@everyone\n{message}",
+    embed=embed
+)
+
         await client.close()
 
     await client.start(discord_token)
