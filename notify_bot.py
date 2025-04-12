@@ -8,7 +8,7 @@ from dotenv import load_dotenv
 
 # .envの読み込み
 load_dotenv()
-openai.api_key = os.getenv("OPENAI_API_KEY")
+
 discord_token = os.getenv("DISCORD_TOKEN")
 channel_id = int(os.getenv("DISCORD_CHANNEL_ID"))
 weather_api_key = os.getenv("OPENWEATHER_API_KEY")
@@ -34,6 +34,10 @@ def get_news():
     return "\n".join(top_articles)
 
 # GPTで通知文を生成
+from openai import OpenAI
+
+client = OpenAI(api_key=os.getenv("OPENAI_API_KEY"))
+
 async def generate_message(weather_text, news_text):
     prompt = (
         "以下の情報を元に、朝のDiscord通知メッセージを自然な口調で作ってください。\n"
@@ -44,11 +48,13 @@ async def generate_message(weather_text, news_text):
         "テンションは明るめで、見た人が『よし今日も頑張ろう』と思えるようにしてください。"
     )
 
-    response = openai.ChatCompletion.create(
-        model="gpt-4o",  # 課金済みなのでOK
+    response = client.chat.completions.create(
+        model="gpt-4o",
         messages=[{"role": "user", "content": prompt}]
     )
+
     return response.choices[0].message.content
+
 
 # Discordに送信
 async def main():
