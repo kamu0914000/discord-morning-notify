@@ -66,22 +66,21 @@ async def main():
     client = discord.Client(intents=intents)
 
     @client.event
-    async def on_ready():
-        channel = client.get_channel(channel_id)
+async def on_ready():
+    channel = client.get_channel(channel_id)
 
-        # 本文をすべて content に直接入れる
-        full_message = f"""@everyone
-☀️ おはようございます！
+    embed = discord.Embed(
+        title="☀️ 今日の朝通知",
+        description=message,
+        color=0x1abc9c
+    )
+    embed.set_footer(text="powered by ChatGPT + OpenWeather + Yahoo News")
 
-{message}
+    await channel.send(content="☀️ 今日の朝通知", embed=embed)
+    await client.close()
 
-powered by ChatGPT + OpenWeather + Yahoo News
-"""
-
-        await channel.send(content=full_message)
-        await client.close()
-
-    await client.start(discord_token)
+# 👇 ここは on_ready の外に置く！
+await client.start(discord_token)
 
 
 asyncio.run(main())
