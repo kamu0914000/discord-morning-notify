@@ -3,7 +3,7 @@ name: Notify Discord every morning
 on:
   schedule:
     - cron: '0 0 * * *'  # 毎朝9時(JST)
-  workflow_dispatch:
+  workflow_dispatch:      # 手動実行も可能
 
 jobs:
   run-bot:
@@ -19,9 +19,9 @@ jobs:
 
       - name: Install dependencies
         run: |
-          pip install openai discord.py python-dotenv requests feedparser
+          pip install openai discord.py python-dotenv requests feedparser google-api-python-client
 
-      - name: Run notify bot (天気のやつ)
+      - name: Run weather bot ☀️
         env:
           OPENAI_API_KEY: ${{ secrets.OPENAI_API_KEY }}
           DISCORD_TOKEN: ${{ secrets.DISCORD_TOKEN }}
@@ -30,10 +30,11 @@ jobs:
         run: |
           python notify_bot.py
 
-      - name: Run schedule bot (予定通知のやつ)
+      - name: Run schedule bot 📅
         env:
           DISCORD_TOKEN: ${{ secrets.DISCORD_TOKEN }}
           DISCORD_CHANNEL_ID: ${{ secrets.DISCORD_CHANNEL_ID }}
         run: |
           python schedule_notify.py
+
 
