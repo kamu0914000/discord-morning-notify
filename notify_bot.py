@@ -29,7 +29,7 @@ def get_precipitation_forecast():
     now = datetime.utcnow() + timedelta(hours=9)  # JST
     for forecast in res["list"]:
         forecast_time = datetime.fromtimestamp(forecast["dt"]) + timedelta(hours=9)
-        if 9 <= forecast_time.hour <= 24:
+        if 9 <= forecast_time.hour <= 23:
             if "rain" in forecast and forecast["rain"].get("3h", 0) > 0:
                 rain_hours.append(forecast_time.strftime("%H:%M"))
     return rain_hours
@@ -37,9 +37,9 @@ def get_precipitation_forecast():
 # 傘が必要か判断
 def get_umbrella_advice(rain_hours):
     if rain_hours:
-        return f"☔ 【9時から24時の間に雨予報あり！】\n「{', '.join(rain_hours)}」頃に雨の可能性あり。傘を持っていこう♨\n"
+        return f"\n☔ 【9時から24時の間に雨予報あり】\n以下の時間帯に雨の可能性があります：{', '.join(rain_hours)}。傘を持っていこう！"
     else:
-        return "☔ 本日は雨の5時間前以降の予報はないようです！傘はたぶん要らないでしょう☀\n"
+        return "\n☀️ 本日は雨の予報はないようです！傘はいらないかも。"
 
 # Yahooニュースから最新記事を1つ取得
 def get_news():
@@ -56,12 +56,21 @@ async def generate_message(current_weather, forecast, umbrella_advice, news):
     wind = current_weather['wind']['speed']
 
     prompt = f"""
-    今日の天気は「{weather_main}」で、温度は{temp}℃。
-    風速は{wind}m/s。
-    {umbrella_advice}
-    これらをもとに、亲しみやすく、今日中の天気の説明や、最適な服装の30文字以内のアドバイスも続けて書いて。\n
-    最新ニュース: {news}
-    """
+今日の天気は「{weather_main}」、気温は{temp}℃、風速は{wind}m/sです。
+{umbrella_advice}
+
+この情報をもとに、親しみやすく自然な日本語で、以下の内容を含む文章を作ってください：
+
+1. 今日の天気の全体的な説明（朝〜夜までの様子）
+2. 気温に応じたおすすめの服装（例：ライトアウター、パーカー、コートなど）
+3. 傘が必要かどうかのアドバイス
+4. ニュースも1〜2文で簡単に紹介
+
+文章は150文字〜400文字程度でお願いします。
+自然な挨拶文から始めて、ポジティブな締めで終えてください。
+
+最新ニュース: {news}
+"""
 
     client = openai.OpenAI()
     response = client.chat.completions.create(
@@ -102,6 +111,7 @@ async def main():
 # 実行
 if __name__ == "__main__":
     asyncio.run(main())
+
 
 
 
