@@ -1,117 +1,84 @@
 import os
-import asyncio
-import discord
 import requests
 import feedparser
+import openai
+import discord
+import asyncio
 from datetime import datetime, timedelta
-from openai import OpenAI
 from dotenv import load_dotenv
 
 load_dotenv()
 
-# API Keys & Settings
-openai_api_key = os.getenv("OPENAI_API_KEY")
+# APIキーと設定
+openai.api_key = os.getenv("OPENAI_API_KEY")
 discord_token = os.getenv("DISCORD_TOKEN")
 channel_id = int(os.getenv("DISCORD_CHANNEL_ID"))
 weather_api_key = os.getenv("OPENWEATHER_API_KEY")
 
-client_openai = OpenAI(api_key=openai_api_key)
-
-# --- Weather ---
+# 天気を取得（東京固定）
 def get_weather():
     url = f"https://api.openweathermap.org/data/2.5/weather?q=Tokyo,jp&appid={weather_api_key}&units=metric&lang=ja"
-    response = requests.get(url)
-    if response.status_code != 200:
-        return "天気情報の取得に失敗しました。", 0
-    data = response.json()
-    return data["weather"][0]["description"], data["main"]["temp"]
+    res = requests.get(url).json()
+    return res
 
-# --- Rain Forecast ---
-def get_hourly_rain_forecast():
+# 降水予報（9時〜24時）を取得
+def get_precipitation_forecast():
     url = f"https://api.openweathermap.org/data/2.5/forecast?q=Tokyo,jp&appid={weather_api_key}&units=metric&lang=ja"
-    response = requests.get(url)
-    forecast_data = response.json()
-    forecasts = []
-    now = datetime.utcnow() + timedelta(hours=9)
-    for entry in forecast_data["list"]:
-        forecast_time = datetime.strptime(entry["dt_txt"], "%Y-%m-%d %H:%M:%S")
-        if 9 <= forecast_time.hour <= 24 and forecast_time.date() == now.date():
-            hour_label = f"{forecast_time.hour}時〜{forecast_time.hour+3}時"
-            rain = entry["weather"][0]["description"]
-            pop = int(entry.get("pop", 0) * 100)
-            forecasts.append(f"・{hour_label}：{rain}（降水確率{pop}%）")
-    return forecasts
+    res = requests.get(url).json()
+    rain_hours = []
+    now = datetime.utcnow() + timedelta(hours=9)  # JST
+    for forecast in res["list"]:
+        forecast_time = datetime.fromtimestamp(forecast["dt"]) + timedelta(hours=9)
+        if 9 <= forecast_time.hour <= 24:
+            if "rain" in forecast and forecast["rain"].get("3h", 0) > 0:
+                rain_hours.append(forecast_time.strftime("%H:%M"))
+    return rain_hours
 
-# --- Umbrella Advice ---
-def generate_umbrella_advice(hourly_forecasts):
-    return (
-        "今日は雨の可能性があるので、傘を持って出かけると安心です ☔"
-        if any("雨" in f for f in hourly_forecasts)
-        else "今日は雨の心配はなさそうです。気持ちのいい一日になりそうですね ☀️"
-    )
-
-# --- Outfit Advice ---
-def get_outfit_advice(temp):
-    if temp < 10:
-        return "今日はとても寒いので、厚手のコートやマフラーが必要です🧣🧥"
-    elif temp < 15:
-        return "肌寒い一日になりそうです。ライトアウターやトレンチコートがあると安心です🧥"
-    elif temp < 20:
-        return "少し肌寒いかもしれません。薄手のカーディガンなどがあると良いでしょう🧶"
+# 傘が必要か判断
+def get_umbrella_advice(rain_hours):
+    if rain_hours:
+        return f"☔ 【9時から24時の間に雨予報あり！】\n「{', '.join(rain_hours)}」頃に雨の可能性あり。傘を持っていこう♨\n"
     else:
-        return "暖かい一日になりそうです。軽装で快適に過ごせます👕"
+        return "☔ 本日は雨の5時間前以降の予報はないようです！傘はたぶん要らないでしょう☀\n"
 
-# --- News ---
+# Yahooニュースから最新記事を1つ取得
 def get_news():
     feed = feedparser.parse("https://news.yahoo.co.jp/rss/topics/top-picks.xml")
-    return [f"・{entry.title}" for entry in feed.entries[:3]]
+    if feed.entries:
+        entry = feed.entries[0]
+        return f"{entry.title} - {entry.link}"
+    return "ニュース情報の取得に失敗しました"
 
-# --- Weekday Mood ---
-def get_weekday_label():
-    return ["月曜日", "火曜日", "水曜日", "木曜日", "金曜日", "土曜日", "日曜日"][(datetime.utcnow() + timedelta(hours=9)).weekday()]
+# GPTでメッセージ生成
+async def generate_message(current_weather, forecast, umbrella_advice, news):
+    temp = current_weather['main']['temp']
+    weather_main = current_weather['weather'][0]['description']
+    wind = current_weather['wind']['speed']
 
-def get_weekday_mood(weekday):
-    mood_map = {
-        "月曜日": "少し憂鬱な気持ちと共に、新しい一週間を迎えるトーンで",
-        "火曜日": "現実を受け入れつつ、やるべきことをこなす雰囲気で",
-        "水曜日": "週の折り返し地点として少し疲れを感じつつも励ますように",
-        "木曜日": "少し飽きと疲れが出始める中で淡々と伝えるトーンで",
-        "金曜日": "週末が近づいて高揚感を感じさせるように明るく",
-        "土曜日": "のんびりとした週末の始まりを感じさせるリラックスしたトーンで",
-        "日曜日": "明日が月曜である現実を少し意識しつつ、休息を大切にする雰囲気で"
-    }
-    return mood_map.get(weekday, "")
-
-# --- Generate Message with GPT ---
-def generate_message_with_gpt(weather, temp, umbrella_advice, hourly_rain_forecast, outfit, news):
-    weekday = get_weekday_label()
-    mood = get_weekday_mood(weekday)
-    forecast_text = "\n".join(hourly_rain_forecast)
-    news_text = "\n".join(news)
     prompt = f"""
-今日は{weekday}です。{mood}
-以下の情報をもとに、朝の挨拶メッセージを作成してください：
-・天気：{weather}、{temp:.1f}℃
-・服装アドバイス：{outfit}
-・傘アドバイス：{umbrella_advice}
-・降水予報：\n{forecast_text}
-・今日のニュース：\n{news_text}
-"""
-    response = client_openai.chat.completions.create(
-        model="gpt-4",
-        messages=[{"role": "user", "content": prompt}],
-        temperature=0.7
+    今日の天気は「{weather_main}」で、温度は{temp}℃。
+    風速は{wind}m/s。
+    {umbrella_advice}
+    これらをもとに、亲しみやすく、今日中の天気の説明や、最適な服装の30文字以内のアドバイスも続けて書いて。\n
+    最新ニュース: {news}
+    """
+
+    client = openai.OpenAI()
+    response = client.chat.completions.create(
+        model="gpt-4o",
+        messages=[
+            {"role": "user", "content": prompt}
+        ]
     )
     return response.choices[0].message.content
 
-# --- Discord Notification ---
+# Discordに送信
 async def main():
-    weather, temp = get_weather()
-    hourly_forecast = get_hourly_rain_forecast()
-    umbrella = generate_umbrella_advice(hourly_forecast)
-    outfit = get_outfit_advice(temp)
-    news = get_news()
-    message = generate_message_with_gpt(weather, temp, umbrella, hourly_forecast, outfit, news)
+    current_weather = get_weather()
+    rain_forecast = get_precipitation_forecast()
+    umbrella_advice = get_umbrella_advice(rain_forecast)
+    news_text = get_news()
+    message = await generate_message(current_weather, rain_forecast, umbrella_advice, news_text)
 
     intents = discord.Intents.default()
     client = discord.Client(intents=intents)
@@ -119,17 +86,20 @@ async def main():
     @client.event
     async def on_ready():
         channel = client.get_channel(channel_id)
+
         embed = discord.Embed(
             title="☀️ 今日の朝通知",
             description=message,
             color=0x1abc9c
         )
-        embed.set_footer(text="powered by GPT-4 + OpenWeather + Yahoo News")
-        await channel.send(embed=embed)
+        embed.set_footer(text="powered by ChatGPT + OpenWeather + Yahoo News")
+
+        await channel.send(content="@everyone", embed=embed)
         await client.close()
 
     await client.start(discord_token)
 
+# 実行
 if __name__ == "__main__":
     asyncio.run(main())
 
