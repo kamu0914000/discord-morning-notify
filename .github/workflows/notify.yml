@@ -3,7 +3,7 @@ name: Notify Discord every morning
 on:
   schedule:
     - cron: '0 0 * * *'  # 毎朝9時(JST)
-  workflow_dispatch:      # 手動実行も可能
+  workflow_dispatch:
 
 jobs:
   run-bot:
@@ -30,11 +30,15 @@ jobs:
         run: |
           python notify_bot.py
 
+      - name: Decode token.pickle
+        run: |
+          echo "$TOKEN_PICKLE_B64" | base64 -d > token.pickle
+        env:
+          TOKEN_PICKLE_B64: ${{ secrets.TOKEN_PICKLE_B64 }}
+
       - name: Run schedule bot 📅
         env:
           DISCORD_TOKEN: ${{ secrets.DISCORD_TOKEN }}
           DISCORD_CHANNEL_ID: ${{ secrets.DISCORD_CHANNEL_ID }}
         run: |
           python schedule_notify.py
-
-
