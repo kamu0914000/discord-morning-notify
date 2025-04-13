@@ -15,82 +15,84 @@ discord_token = os.getenv("DISCORD_TOKEN")
 channel_id = int(os.getenv("DISCORD_CHANNEL_ID"))
 weather_api_key = os.getenv("OPENWEATHER_API_KEY")
 
-# 現在の天気を取得
+# 天気を取得（東京固定）
 def get_weather():
     url = f"https://api.openweathermap.org/data/2.5/weather?q=Tokyo,jp&appid={weather_api_key}&units=metric&lang=ja"
     res = requests.get(url).json()
     return res
 
-# 時系列の降水予報を取得（9時〜24時）
+# 降水予報（9時〜24時）を取得
 def get_precipitation_forecast():
     url = f"https://api.openweathermap.org/data/2.5/forecast?q=Tokyo,jp&appid={weather_api_key}&units=metric&lang=ja"
     res = requests.get(url).json()
-    hourly_rain_info = []
-    now = datetime.utcnow() + timedelta(hours=9)  # JST
-
+    rain_info = []
+    now = datetime.utcnow() + timedelta(hours=9)
     for forecast in res["list"]:
         forecast_time = datetime.fromtimestamp(forecast["dt"]) + timedelta(hours=9)
-        if 9 <= forecast_time.hour <= 24:
-            time_str = f"{forecast_time.hour}時〜{forecast_time.hour+3}時"
-            weather_desc = forecast["weather"][0]["description"]
-            rain_chance = forecast.get("pop", 0) * 100
-            entry = (forecast_time, f"・{time_str}：{weather_desc}（降水確率{round(rain_chance)}%）")
-            hourly_rain_info.append(entry)
+        if 9 <= forecast_time.hour < 24:
+            weather = forecast["weather"][0]["description"]
+            pop = int(forecast.get("pop", 0) * 100)
+            hour_block = f"{forecast_time.hour:02d}時〜{(forecast_time.hour+3)%24:02d}時"
+            rain_info.append(f"・{hour_block}：{weather}（降水確率{pop}%）")
+    return rain_info
 
-    # 時系列順に並び替え
-    hourly_rain_info.sort(key=lambda x: x[0])
-    return [e[1] for e in hourly_rain_info]
+# 傘が必要か判断
+def get_umbrella_advice(rain_info):
+    if any("雨" in r for r in rain_info):
+        return "今日は傘が必要です。降水の時間帯にご注意ください。"
+    else:
+        return "今日は雨の心配は少なそうです☀"
 
-# Yahooニュースを取得
+# Yahooニュースから最新記事を3件取得
 def get_news():
     feed = feedparser.parse("https://news.yahoo.co.jp/rss/topics/top-picks.xml")
-    if feed.entries:
-        entries = feed.entries[:3]
-        return "\n".join([f"・{entry.title}" for entry in entries])
-    return "・ニュース情報の取得に失敗しました"
+    entries = feed.entries[:3]
+    news_lines = [f"・{entry.title}" for entry in entries]
+    return "\n".join(news_lines)
 
 # GPTでメッセージ生成
-async def generate_message(current_weather, rain_list, news_text):
+async def generate_message(current_weather, rain_info, umbrella_advice, news):
     temp = current_weather['main']['temp']
     weather_main = current_weather['weather'][0]['description']
     wind = current_weather['wind']['speed']
 
-    rain_block = "\n".join(rain_list)
-
     prompt = f"""
-東京の現在の天気は「{weather_main}」、気温は{temp:.1f}℃、風速は{wind:.2f}m/sです。
-今日の服装アドバイス、天気のまとめ、雨の時系列予報（9〜24時）、ニュース、最後の一言を含むDiscord通知メッセージを作ってください。
-親しみやすく、丁寧な日本語で。
+以下の条件をもとに、以下の形式でDiscord通知用の文章を日本語で作成してください：
 
-【形式】
-🌤 今日の天気まとめ
-（例）東京は今日は「晴れ」となっています。気温は◯度で、風はやや強めです。外出の際は◯◯に注意です。
+☀️ 今日の天気
+- 天気の説明（{weather_main}）
+- 気温（{temp}℃）
+- 風速（{wind}m/s）
+- 傘のアドバイス（{umbrella_advice}）
 
-👕 今日の服装アドバイス
-（例）ライトアウターや防水ジャケットがおすすめです。気温や風にも備えましょう。
+🧥 今日の服装アドバイス
+- 気温・風を踏まえたおすすめの服装
 
 🌧️ 今日の雨予報（9時〜24時）
-（例）・9時〜12時：曇りがち（降水確率30%）
-　　　・12時〜15時：小雨（降水確率70%）...
+{chr(10).join(rain_info)}
 
 📰 今日の注目ニュース
-{news_text}
+{news}
 
-（最後に一言）"""
+最後に、元気が出る一言で締めてください。
+"""
 
     client = openai.OpenAI()
     response = client.chat.completions.create(
         model="gpt-4o",
-        messages=[{"role": "user", "content": prompt}]
+        messages=[
+            {"role": "user", "content": prompt}
+        ]
     )
     return response.choices[0].message.content
 
 # Discordに送信
 async def main():
     current_weather = get_weather()
-    rain_list = get_precipitation_forecast()
+    rain_info = get_precipitation_forecast()
+    umbrella_advice = get_umbrella_advice(rain_info)
     news_text = get_news()
-    message = await generate_message(current_weather, rain_list, news_text)
+    message = await generate_message(current_weather, rain_info, umbrella_advice, news_text)
 
     intents = discord.Intents.default()
     client = discord.Client(intents=intents)
@@ -98,12 +100,14 @@ async def main():
     @client.event
     async def on_ready():
         channel = client.get_channel(channel_id)
+
         embed = discord.Embed(
             title="☀️ 今日の朝通知",
             description=message,
             color=0x1abc9c
         )
         embed.set_footer(text="powered by ChatGPT + OpenWeather + Yahoo News")
+
         await channel.send(content="@everyone", embed=embed)
         await client.close()
 
